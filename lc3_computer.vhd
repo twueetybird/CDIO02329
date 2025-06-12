@@ -37,7 +37,7 @@ entity lc3_computer is
       tx_data          : out std_logic_vector(7 downto 0); -- Data
       tx_wr            : out std_logic; -- Writing data
       tx_full          : in  std_logic; -- = data_in(15)
-		
+      
 		sink             : out std_logic;
 
       --Debug
@@ -49,7 +49,11 @@ entity lc3_computer is
 		--LC3 CPU inputs
       cpu_clk_enable   : in  std_logic;
       sys_reset        : in  std_logic;
-      sys_program      : in  std_logic
+      sys_program      : in  std_logic;
+      
+      -- UART PC PORT
+      pc_rx : in std_logic;
+      pc_tx : out std_logic
    );
 end lc3_computer;
 
@@ -107,7 +111,16 @@ architecture Behavioral of lc3_computer is
 	constant IO_SSEG    : std_logic_vector(15 downto 0) := X"FE12";  -- 7 segment
 	constant IO_LED     : std_logic_vector(15 downto 0) := X"FE16";  -- Leds
 	constant IO_PLED    : std_logic_vector(15 downto 0) := X"FE17";  -- Physical Leds
+	
+	constant PC_STDIN_S    : std_logic_vector(15 downto 0) := X"FE20";  -- PC UART Serial IN (terminal keyboard)
+    constant PC_STDIN_D    : std_logic_vector(15 downto 0) := X"FE22";
+    constant PC_STDOUT_S   : std_logic_vector(15 downto 0) := X"FE24";  -- PC UART Serial OUT (terminal  display)
+    constant PC_STDOUT_D   : std_logic_vector(15 downto 0) := X"FE26";
    
+   
+   
+   
+
 	---<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>---
    ---<<<<< End of pregenerated code >>>>>---
    ---<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>---
@@ -435,6 +448,11 @@ signal DDR_e : std_logic;
 
 signal DSR_reg : std_logic;
 
+         -- PC UART
+    signal pc_tx_full, pc_rx_empty : std_logic;
+    signal pc_rx_data : std_logic_vector(7 downto 0);
+    signal pc_tx_data : std_logic_vector(7 downto 0);
+    signal pc_rx_rd, pc_tx_wr : std_logic;
 
 begin
   ---<<<<<<<<<<<<<<>>>>>>>>>>>>>>>---
@@ -539,6 +557,24 @@ begin
 	-------------------------------------------------------------------------------
 	-- <<< Write your VHDL code starting from here >>>
 	-------------------------------------------------------------------------------
+	
+	    IO_UART : entity work.uart
+       port map(
+           clk     =>  clk,
+           reset   =>  sys_reset,
+           rd_uart =>  pc_rx_rd,
+           wr_uart =>  pc_tx_wr,
+           rx      =>  pc_rx,
+           w_data  =>  pc_tx_data,
+           tx_full =>  pc_tx_full,
+           rx_empty=> pc_rx_empty,
+           r_data  => pc_rx_data,
+           tx         => pc_tx  
+           );	
+	
+	
+	
+	
 
    process (clk)
    begin
@@ -593,6 +629,8 @@ begin
         WE_pled <= '0';
         tx_wr <='0';
         rx_rd <= '0';
+        pc_tx_wr <= '0';
+        pc_rx_rd <= '0';
         if address = IO_SW then -- Switchs
             data_out <= "00000000" & sw;
         elsif address = IO_PSW then -- Physical Switch
@@ -615,13 +653,23 @@ begin
             data_out <= not (rx_empty) & "000000000000000";
         elsif address = STDIN_D and RE ='1' then -- KBDR 
             data_out <= "00000000" & rx_data;
-            rx_rd <= '1';    
+            rx_rd <= '1';
+        elsif address = PC_STDIN_S then
+            data_out <= not(pc_rx_empty) & "000000000000000";
+        elsif address = PC_STDIN_D and RE = '1' then
+            data_out <= x"00" & pc_rx_data;
+            pc_rx_rd <= '1';
+        elsif address = PC_STDOUT_S then
+            data_out <= not (pc_tx_full)& "000000000000000";
+        elsif address = PC_STDOUT_D and WE='1' then
+            pc_tx_wr <= '1';    
         else --RAM
             data_out <= ram(to_integer(unsigned(addr_reg)));
         end if;
    end process;
    
 tx_data <= data_in(7 downto 0); -- DDR data
+pc_tx_data <= data_in(7 downto 0);
 
 end Behavioral;
 
